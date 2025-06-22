@@ -1,12 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./out-tsc/worker",
-    "target": "ES2022",
-    "module": "ES2022",
-    "lib": ["ES2022", "webworker"]
+    // only pull in the webworker lib, not the DOM
+    "lib": ["es2020", "webworker"],
+    // emit as an ES module for Angular to bundle
+    "module": "es2020",
+    "target": "es2020",
+    "types": []
   },
+  // only compile your worker file(s) here
   "include": [
-    "src/app/worker/**/*.ts"
+    "src/app/worker/**/*.worker.ts" 
   ]
 }
