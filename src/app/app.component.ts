@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { OverlapService } from './overlap.service';
+import { OverlapNewService } from './worker/overlapnew.service';
 
 @Component({
   selector: 'app-root',
@@ -19,7 +20,7 @@ export class AppComponent {
   // full list of overlapping pairs
   allPairs: [string, string][] = [];
 
-  constructor(public svc: OverlapService) {
+  constructor(public svc: OverlapService, public newser:OverlapNewService) {
     // subscribe to incoming parsed features
     svc.feature$.subscribe(f => {
       this.files.push({ id: f.id, name: f.name });
@@ -76,4 +77,25 @@ export class AppComponent {
     this.checkingOne = false;
     this.detectingAll = false;
   }
+
+
+  customMethod(){
+    // 1) start parsing
+      // this.newser.loadZip(zipArrayBuffer);
+
+      // 2) subscribe to features for UI feedback
+       this.newser.feature$.subscribe(f => console.log('parsed', f));
+
+      // 3) when parsing completes, build the matrix
+      this.newser.done$.subscribe(() => {
+        // without R-tree:
+        const mat1 = this.newser.computeMatrixFromParsed(false);
+        // with R-tree:
+        const mat2 = this.newser.computeMatrixFromParsed(true);
+        console.table(mat2);
+      });
+  }
+
+  // 1) start parsing
+
 }
