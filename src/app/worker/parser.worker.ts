@@ -1,30 +1,33 @@
-/// <reference lib="webworker"/>
-import * as JSZip     from 'jszip';
-// import { XMLParser } from 'fast-xml-parser';
-const tj: any = require('@mapbox/togeojson');
-import { DOMParser } from 'xmldom';
-import { flatten, bbox as turfBbox } from '@turf/turf';
-
+/// <reference lib="webworker" />
+import * as JSZip           from 'jszip';
+import { DOMParser }   from 'xmldom';
+import * as tj         from '@mapbox/togeojson';
+import { flatten }     from '@turf/flatten';
+import bbox            from '@turf/bbox';
+import type { Feature } from 'geojson';
+//"skipLibCheck": true
 addEventListener('message', async ({ data }) => {
   if (data.type !== 'load') return;
   const zip = await JSZip.loadAsync(data.file);
-  const kmlFiles = Object.values(zip.files).filter(f => f.name.toLowerCase().endsWith('.kml'));
+  const kmlFiles = Object.values(zip.files)
+    .filter(f => f.name.toLowerCase().endsWith('.kml'));
 
   let featureIndex = 0;
   for (const file of kmlFiles) {
     const xmlText = await file.async('text');
+    // parse KML → DOM → GeoJSON FeatureCollection
     const dom     = new DOMParser().parseFromString(xmlText, 'application/xml');
-    const geojson = tj.kml(dom) as GeoJSON.FeatureCollection;
+    const gj      = tj.kml(dom) as GeoJSON.FeatureCollection;
 
-    // flatten will spit out Features for Point, LineString, Polygon, Multi*, etc.
-    const flat = flatten(geojson);
+    // explode Multi* into single Geometries
+    const flat    = flatten(gj);
 
-    for (const feat of flat.features) {
-      // turfBbox returns [minX,minY,maxX,maxY]
-      const bb = turfBbox(feat) as [number,number,number,number];
+    for (const feat of flat.features as Feature[]) {
+      // turf.bbox returns [minX, minY, maxX, maxY]
+      const bb = bbox(feat) as [number, number, number, number];
 
       postMessage({
-        type: 'feature',
+        type:  'feature',
         data: {
           id:   `${file.name}#${featureIndex++}`,
           name: file.name,
@@ -34,5 +37,6 @@ addEventListener('message', async ({ data }) => {
       });
     }
   }
+
   postMessage({ type: 'done' });
 });
