@@ -137,6 +137,13 @@ import { takeUntil, map, mergeMap, toArray } from 'rxjs/operators';
 import * as JSZip from 'jszip';
 import RBush from 'rbush';
 
+
+// export interface FeatureRec {
+//   id: string;
+//   name: string;
+//   geom: any;   // now holds Point, LineString, Polygon, etc.
+//   bbox: [number,number,number,number];
+// }
 interface FeatureRec {
   id: string;
   name: string;
