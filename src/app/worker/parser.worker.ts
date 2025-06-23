@@ -129,7 +129,7 @@ type KmlGeom =
   | { type: 'Point';            coords: [number,number] }
   | { type: 'LineString';       coords: [number,number][] }
   | { type: 'Polygon';          coords: [ [number,number][] ] }
-  | { type: 'MultiLineString';  coords: [ [number,number][] ] }
+  | { type: 'MultiLineString';  coords: [number,number][][]  }
   | { type: 'MultiPolygon';     coords: [ [number,number][] ][] };
 
 const xmlParser = new XMLParser({
@@ -192,7 +192,7 @@ function extractGeoms(obj: any): KmlGeom[] {
     // MultiLineString
     if (lines.length === total && lines.length > 1) {
       const allLines: [number,number][][] = lines.map(l => collectCoords(l.coordinates));
-      // out.push({ type: 'MultiLineString', coords: allLines });
+      out.push({ type: 'MultiLineString', coords: allLines });
     }
     // MultiPolygon
     else if (polys.length === total && polys.length > 1) {
