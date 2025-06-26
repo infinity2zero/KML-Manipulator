@@ -456,6 +456,29 @@ public computeOverlapJson(features: FeatureRec[]): Record<string,string[]> {
     });
   }
 
+  /**
+   * 
+   * const sortedResultArray = Object.entries(result)
+  .sort(([a],[b]) => a.localeCompare(b))
+  .map(([name, overlaps]) => ({
+    name,
+    overlap: Array.from(new Set(overlaps)).sort()
+  }));
+
+return sortedResultArray;
+   */
+
+  /**
+   * 
+   * return Object.keys(result)
+    .sort()   // sort file names ascending
+    .map(name => ({
+      name,
+      overlap: Array.from(new Set(result[name]))  // dedupe
+                   .sort()                       // sort overlaps ascending
+    }));
+   */
+
   
 
 

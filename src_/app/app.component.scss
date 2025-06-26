@@ -1,0 +1,25 @@
+.drop-zone {
+  border: 2px dashed #6c757d;
+  border-radius: .25rem;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+}
+
+.file-list {
+  height: 260px;
+  border: 1px solid #dee2e6;
+  border-radius: .25rem;
+  overflow: auto;
+}
+
+.list-group-item.selected {
+  background-color: #e2e6ea;
+  cursor: pointer;
+}
+
+.list-group-item {
+  cursor: pointer;
+}

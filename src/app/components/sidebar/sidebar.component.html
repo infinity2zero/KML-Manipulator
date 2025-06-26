@@ -1,0 +1,5 @@
+<!-- sidebar.component.html -->
+<nav class="sidebar" [class.collapsed]="collapsed">
+  <button class="toggle-btn" (click)="collapsed = !collapsed">☰</button>
+  <app-sidebar-tree [items]="menuItems" [collapsed]="collapsed"></app-sidebar-tree>
+</nav>

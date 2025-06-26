@@ -1,0 +1,29 @@
+/* sidebar.component.scss */
+.sidebar {
+  width: 250px;
+  transition: width 0.3s ease;
+  background: #2c3e50;
+  color: white;
+  height: 100vh;
+  overflow: hidden;
+
+  &.collapsed {
+    width: 60px;
+
+    .label {
+      display: none;
+    }
+
+    .tree-node:hover .submenu {
+      display: block;
+    }
+  }
+
+  .toggle-btn {
+    background: none;
+    border: none;
+    color: white;
+    padding: 1rem;
+    cursor: pointer;
+  }
+}

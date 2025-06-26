@@ -1,0 +1,17 @@
+<!-- sidebar-tree.component.html -->
+<ul class="tree">
+  <li *ngFor="let it of items" class="tree-node" [class.has-children]="it.children?.length">
+    <div class="tree-label" (click)="toggle(it)">
+      <i class="{{ it.icon }}"></i>
+      <span class="label">{{ it.label }}</span>
+      <i *ngIf="it.children?.length" class="fa fa-chevron-right chevron" [class.rotated]="isOpen(it)"></i>
+    </div>
+
+    <ul class="submenu" *ngIf="it.children && isOpen(it)">
+      <li *ngFor="let child of it.children">
+        <i class="{{ child.icon }}"></i>
+        <span class="label">{{ child.label }}</span>
+      </li>
+    </ul>
+  </li>
+</ul>

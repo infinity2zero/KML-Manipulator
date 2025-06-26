@@ -1,7 +1,6 @@
 import { Component } from '@angular/core';
-import { OverlapNewService } from './modifiedOverlap.service';
 import { OverlapService } from './overlap.service';
-// import { OverlapServiceV2 } from './overlapV2.service';
+import { OverlapNewService } from './worker/overlapnew.service';
 
 @Component({
   selector: 'app-root',
@@ -20,59 +19,16 @@ export class AppComponent {
   detectingAll = false;
   // full list of overlapping pairs
   allPairs: [string, string][] = [];
- 
-  status:any='';
+
   constructor(public svc: OverlapService, public newser:OverlapNewService) {
     // subscribe to incoming parsed features
-    // svc.feature$.subscribe(f => {
-    //   this.files.push({ id: f.id, name: f.name });
-    //   // auto-select first file once parsing starts
-    //   if (!this.targetId) {
-    //     this.targetId = f.id;
-    //   }
-      
-    // });
-
-
-
-
-    this.newser.feature$.subscribe(f =>{
-      //  console.log('parsed', f)
-       this.status = f.name;
-      });
-
-    this.newser.done$.subscribe(() => {
-      console.log('DONE--');
-      let t1 = performance.now();
-                                    
-      // without R-tree:
-      // const mat1 = this.newser.computeMatrixFromParsed(false);
-      // with R-tree:
-      
-      // this.newser.checkOverlap().then(result=>{
-      //   let t2 = performance.now();
-      //    console.log('time taken to complete overlap', (t2 - t1) / 1000 + 's');
-      //    console.log('from worker promise method',result);
-
-      // });
-
-
-      const mat1 = this.newser.computeJSONFromParsed(false);
-      
-      console.log('without worker',mat1);
-      let t2 = performance.now();
-      console.log('time taken to complete overlap', (t2 - t1) / 1000 + 's');
-
-
-
-      // this.serviceTYpe2.runOverlap().then(d=>{
-      //   console.log(d);
-      // });
-      
+    svc.feature$.subscribe(f => {
+      this.files.push({ id: f.id, name: f.name });
+      // auto-select first file once parsing starts
+      if (!this.targetId) {
+        this.targetId = f.id;
+      }
     });
-
-
-
   }
 
   // handle drag & drop
@@ -85,7 +41,7 @@ export class AppComponent {
     this.reset();
     const file = evt.dataTransfer?.files[0];
     if (file) {
-      file.arrayBuffer().then(buf => this.newser.loadZip(buf));
+      file.arrayBuffer().then(buf => this.svc.loadZip(buf));
     }
   }
 
@@ -104,12 +60,12 @@ export class AppComponent {
 
   // full all-pairs overlap detection
   detectAll() {
-    // this.detectingAll = true;
-    // this.allPairs = [];
-    // this.svc.detectAllOverlaps().subscribe(pairs => {
-    //   this.allPairs = pairs;
-    //   this.detectingAll = false;
-    // });
+    this.detectingAll = true;
+    this.allPairs = [];
+    this.svc.detectAllOverlaps().subscribe(pairs => {
+      this.allPairs = pairs;
+      this.detectingAll = false;
+    });
   }
 
   // reset UI state when loading a new ZIP
@@ -123,12 +79,6 @@ export class AppComponent {
   }
 
 
-
-  fileChangeEvent(file:any){
-    if (file.target.files) {
-      file.arrayBuffer().then((buf:any) => this.newser.loadZip(buf));
-    }
-}
   customMethod(){
     // 1) start parsing
       // this.newser.loadZip(zipArrayBuffer);
@@ -144,17 +94,8 @@ export class AppComponent {
         const mat2 = this.newser.computeMatrixFromParsed(true);
         console.table(mat2);
       });
-
-
-
-
-      // const all = Array.from(this.feats.values());
-
-// 1) naive JSON
-// const json1 = this.overlapService.computeOverlapJson(all);
-// 2) R-tree optimized JSON
-// const json2 = this.overlapService.computeOverlapJsonTree(all);
-
-// console.log(JSON.stringify(json2, null, 2));
   }
+
+  // 1) start parsing
+
 }

@@ -1,3 +1,106 @@
+// /// <reference lib="webworker" />
+
+// import * as JSZip      from 'jszip';
+// import { DOMParser }   from 'xmldom';
+// import { flatten }     from '@turf/flatten';
+// import bbox            from '@turf/bbox';
+// import type { Feature } from 'geojson';
+
+// declare var toGeoJSON:any;
+
+// //"skipLibCheck": true
+// addEventListener('message', async ({ data }) => {
+//   if (data.type !== 'load') return;
+//   const zip = await JSZip.loadAsync(data.file);
+//   const kmlFiles = Object.values(zip.files)
+//     .filter(f => f.name.toLowerCase().endsWith('.kml'));
+
+//   let featureIndex = 0;
+//   for (const file of kmlFiles) {
+//     const xmlText = await file.async('text');
+//     // parse KML → DOM → GeoJSON FeatureCollection
+//     const dom     = new DOMParser().parseFromString(xmlText, 'application/xml');
+//     const gj      = toGeoJSON.kml(dom) as GeoJSON.FeatureCollection;
+
+//     // explode Multi* into single Geometries
+//     const flat    = flatten(gj);
+
+//     for (const feat of flat.features as Feature[]) {
+//       // turf.bbox returns [minX, minY, maxX, maxY]
+//       const bb = bbox(feat) as [number, number, number, number];
+
+//       postMessage({
+//         type:  'feature',
+//         data: {
+//           id:   `${file.name}#${featureIndex++}`,
+//           name: file.name,
+//           geom: feat.geometry,
+//           bbox: bb
+//         }
+//       });
+//     }
+//   }
+
+//   postMessage({ type: 'done' });
+// });
+// import *as JSZip              from 'jszip';
+// import KML                from 'ol/format/KML';
+// import GeoJSON            from 'ol/format/GeoJSON';
+// import flatten            from '@turf/flatten';
+// import turfBbox           from '@turf/bbox';
+// import type { Feature }   from 'geojson';
+
+// addEventListener('message', async ({ data }) => {
+//   if (data.type !== 'load') return;
+
+//   // 1) unzip the incoming .zip
+//   const zip     = await JSZip.loadAsync(data.file);
+//   const entries = Object.values(zip.files)
+//     .filter(f => f.name.toLowerCase().endsWith('.kml'));
+
+//   let featureIdx = 0;
+
+//   // prepare OL formats
+//   const kmlReader = new KML({
+//     // ensure coordinates stay in lon/lat—no reprojection
+//     extractStyles: false
+//   });
+//   const geoWriter = new GeoJSON();
+
+//   for (const entry of entries) {
+//     // 2) read KML text
+//     const xmlText = await entry.async('text');
+
+//     // 3) parse KML → array of ol.Feature
+//     //    readFeatures accepts a string or Document
+//     const olFeatures = kmlReader.readFeatures(xmlText, {
+//       featureProjection: 'EPSG:4326'
+//     });
+
+//     // 4) convert to GeoJSON FeatureCollection
+//     const gj = geoWriter.writeFeaturesObject(olFeatures) as GeoJSON.FeatureCollection;
+
+//     // 5) explode any Multi* into atomic Features
+//     const flat = flatten(gj);
+
+//     // 6) emit each feature + its bbox
+//     for (const feat of flat.features as Feature[]) {
+//       const bb = turfBbox(feat) as [number,number,number,number];
+
+//       postMessage({
+//         type: 'feature',
+//         data: {
+//           id:   `${entry.name}#${featureIdx++}`,
+//           name: entry.name,
+//           geom: feat.geometry,
+//           bbox: bb
+//         }
+//       });
+//     }
+//   }
+
+//   postMessage({ type: 'done' });
+// });
 /// <reference lib="webworker" />
 import * as JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
@@ -26,7 +129,7 @@ type KmlGeom =
   | { type: 'Point';            coords: [number,number] }
   | { type: 'LineString';       coords: [number,number][] }
   | { type: 'Polygon';          coords: [ [number,number][] ] }
-  | { type: 'MultiLineString';  coords: [ [number,number][] ] }
+  | { type: 'MultiLineString';  coords: [number,number][][]  }
   | { type: 'MultiPolygon';     coords: [ [number,number][] ][] };
 
 const xmlParser = new XMLParser({
@@ -49,7 +152,7 @@ function collectCoords(text: string): [number,number][] {
 function findNode(obj: any, tagName: string): any {
   if (!obj || typeof obj !== 'object') return undefined;
   const key = Object.keys(obj)
-    .find(k => k.toLowerCase().endsWith(tagName?.toLowerCase()));
+    .find(k => k.toLowerCase().endsWith(tagName.toLowerCase()));
   return key ? obj[key] : undefined;
 }
 
@@ -89,7 +192,7 @@ function extractGeoms(obj: any): KmlGeom[] {
     // MultiLineString
     if (lines.length === total && lines.length > 1) {
       const allLines: [number,number][][] = lines.map(l => collectCoords(l.coordinates));
-      // out.push({ type: 'MultiLineString', coords: allLines });
+      out.push({ type: 'MultiLineString', coords: allLines });
     }
     // MultiPolygon
     else if (polys.length === total && polys.length > 1) {
@@ -138,17 +241,11 @@ addEventListener('message', async ({ data }) => {
 
   for (const entry of entries) {
     const xmlText = await entry.async('text');
-    let jsObj:any;
-    try {
-      jsObj   = xmlParser.parse(xmlText);
-    } catch (error) {
-      console.log('ERORR WHILE PARSING',error);
-       continue;
-    }
-    
+    const jsObj   = xmlParser.parse(xmlText);
+
     // Extract our KmlGeom[] from the parsed XML
     const kmlGeoms = extractGeoms(jsObj.kml || jsObj);
-   
+
     // Map each KmlGeom → a properly typed GeoJSON Feature
     const features: Feature<Geometry, GeoJsonProperties>[] = kmlGeoms.map((g, i) => {
       // cast coords into a GeoJSON Geometry
@@ -175,20 +272,20 @@ addEventListener('message', async ({ data }) => {
 
     // Flatten any Multi* or GeometryCollections, compute bboxes, emit
     const flat = flatten(fc);
-
     (flat.features as Feature<Geometry>[]).forEach(feat => {
       const bb = turfBbox(feat) as [number,number,number,number];
       postMessage({
         type: 'feature',
         data: {
           id:   feat.id,
-          name: entry.name.split('/')[1],
+          name: entry.name,
           geom: feat.geometry,
           bbox: bb
         }
       });
     });
   }
+
   postMessage({ type: 'done' });
 });
 
