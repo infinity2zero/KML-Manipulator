@@ -8,27 +8,41 @@ interface Box { minX:number; minY:number; maxX:number; maxY:number; }
 
 export interface FeatureRec {
   id: string;
-  name: string; // file name
+  name: string;
   bbox: [number, number, number, number];
-  geom: any;    // GeoJSON geometry
+  geom: any; // GeoJSON geometry
 }
 
 export function computeOverlapByFileHybrid(
   features: FeatureRec[]
 ): Record<string, string[]> {
   const COORD_TOLERANCE     = 0.0001;
-  const MIN_OVERLAP_AREA    = 1e-4;  // map units
-  const MIN_OVERLAP_LENGTH  = 0.001; // in kilometers
+  const MIN_OVERLAP_AREA    = 1e-4;
+  const MIN_OVERLAP_LENGTH  = 0.001;
+
+  const result: Record<string, string[]> = {};
+  const groups = new Map<string, FeatureRec[]>();
+  const fileBoxes = new Map<string, Box>();
+  const fileStartId = new Map<string, string>();
+  const fileStartCoord = new Map<string, [number, number]>();
+
+  function isValidGeom(g: any): boolean {
+    return g && typeof g === 'object' && typeof g.type === 'string' && Array.isArray(g.coordinates);
+  }
 
   function getStartCoord(geom: any): [number, number] {
-    switch (geom.type) {
-      case 'Point': return geom.coordinates;
-      case 'LineString':
-      case 'MultiPoint': return geom.coordinates[0];
-      case 'Polygon':
-      case 'MultiLineString': return geom.coordinates[0][0];
-      case 'MultiPolygon':    return geom.coordinates[0][0][0];
-      default: throw new Error(`Unknown geom ${geom.type}`);
+    try {
+      switch (geom.type) {
+        case 'Point': return geom.coordinates;
+        case 'LineString':
+        case 'MultiPoint': return geom.coordinates[0];
+        case 'Polygon':
+        case 'MultiLineString': return geom.coordinates[0][0];
+        case 'MultiPolygon': return geom.coordinates[0][0][0];
+        default: return [NaN, NaN];
+      }
+    } catch {
+      return [NaN, NaN];
     }
   }
 
@@ -40,27 +54,36 @@ export function computeOverlapByFileHybrid(
            Math.abs(y1 - y2) <= COORD_TOLERANCE;
   }
 
-  const groups = new Map<string, FeatureRec[]>();
+  function safeTouches(a: any, b: any): boolean {
+    const unsupported = ['Point', 'MultiPoint'];
+    if (
+      unsupported.includes(a.geometry?.type) ||
+      unsupported.includes(b.geometry?.type)
+    ) return false;
+    try {
+      return booleanTouches(a, b);
+    } catch {
+      return false;
+    }
+  }
+
+  // Group features and record metadata
   for (const f of features) {
+    if (!isValidGeom(f.geom)) continue;
+
     const bucket = groups.get(f.name) ?? [];
     if (!groups.has(f.name)) groups.set(f.name, bucket);
     bucket.push(f);
   }
+
   const files = Array.from(groups.keys());
-
-  const result: Record<string,string[]> = {};
-  const fileBoxes = new Map<string, Box>();
-  const fileStartId = new Map<string, string>();
-  const fileStartCoord = new Map<string, [number, number]>();
-
   for (const name of files) {
     result[name] = [];
 
-    // compute bounding box
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const recs = groups.get(name)!;
-    for (const fr of recs) {
-      const [x1, y1, x2, y2] = fr.bbox;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const f of recs) {
+      const [x1, y1, x2, y2] = f.bbox;
       minX = Math.min(minX, x1);
       minY = Math.min(minY, y1);
       maxX = Math.max(maxX, x2);
@@ -68,12 +91,12 @@ export function computeOverlapByFileHybrid(
     }
     fileBoxes.set(name, { minX, minY, maxX, maxY });
 
-    // record starting geometry info
     const start = recs[0];
     fileStartId.set(name, start.id);
     fileStartCoord.set(name, getStartCoord(start.geom));
   }
 
+  // Pairwise file comparisons
   for (let i = 0; i < files.length; i++) {
     for (let j = i + 1; j < files.length; j++) {
       const A = files[i], B = files[j];
@@ -84,12 +107,16 @@ export function computeOverlapByFileHybrid(
         boxB.minY > boxA.maxY || boxB.maxY < boxA.minY
       ) continue;
 
-      const startIdA = fileStartId.get(A), coordA = fileStartCoord.get(A)!;
-      const startIdB = fileStartId.get(B), coordB = fileStartCoord.get(B)!;
+      const startIdA = fileStartId.get(A)!;
+      const coordA = fileStartCoord.get(A)!;
+      const startIdB = fileStartId.get(B)!;
+      const coordB = fileStartCoord.get(B)!;
 
-      let matched = false;
+      let found = false;
       outer: for (const ra of groups.get(A)!) {
         for (const rb of groups.get(B)!) {
+          if (!isValidGeom(ra.geom) || !isValidGeom(rb.geom)) continue;
+
           const [a1, a2, a3, a4] = ra.bbox;
           const [b1, b2, b3, b4] = rb.bbox;
           if (b1 > a3 || b3 < a1 || b2 > a4 || b4 < a2) continue;
@@ -99,16 +126,18 @@ export function computeOverlapByFileHybrid(
 
           if (!booleanIntersects(fA, fB)) continue;
           if (safeTouches(fA, fB)) continue;
-          if (!ra.geom || !rb.geom) continue;
-          if (!ra.geom.type || !rb.geom.type) continue;
 
-          const shared = intersect(fA, fB);
-          if (!shared) continue;
+          let shared;
+          try {
+            shared = intersect(fA, fB);
+          } catch {
+            continue;
+          }
+          if (!shared?.geometry?.type) continue;
 
-          const geomType:any = shared.geometry.type;
-          if (geomType === 'Point' || geomType === 'MultiPoint') continue;
-
-          if (geomType === 'LineString' || geomType === 'MultiLineString') {
+          const t:any = shared.geometry.type;
+          if (t === 'Point' || t === 'MultiPoint') continue;
+          if (t === 'LineString' || t === 'MultiLineString') {
             if (length(shared) < MIN_OVERLAP_LENGTH) continue;
           } else {
             if (area(shared) < MIN_OVERLAP_AREA) continue;
@@ -116,13 +145,11 @@ export function computeOverlapByFileHybrid(
 
           const isStartA = ra.id === startIdA;
           const isStartB = rb.id === startIdB;
-          if (isStartA && isStartB && isNear(coordA, coordB)) {
-            continue; // same start-point overlap only — skip
-          }
+          if (isStartA && isStartB && isNear(coordA, coordB)) continue;
 
           result[A].push(B);
           result[B].push(A);
-          matched = true;
+          found = true;
           break outer;
         }
       }
@@ -134,12 +161,4 @@ export function computeOverlapByFileHybrid(
   }
 
   return result;
-}
-function safeTouches(a: any, b: any): boolean {
-  const unsupported = ['Point', 'MultiPoint'];
-  if (
-    unsupported.includes(a.geometry.type) ||
-    unsupported.includes(b.geometry.type)
-  ) return false;
-  return booleanTouches(a, b);
 }
