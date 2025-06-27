@@ -99,6 +99,8 @@ export function computeOverlapByFileHybrid(
 
           if (!booleanIntersects(fA, fB)) continue;
           if (safeTouches(fA, fB)) continue;
+          if (!ra.geom || !rb.geom) continue;
+          if (!ra.geom.type || !rb.geom.type) continue;
 
           const shared = intersect(fA, fB);
           if (!shared) continue;
