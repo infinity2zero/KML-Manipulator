@@ -442,6 +442,150 @@ public computeOverlapJson(features: FeatureRec[]): Record<string,string[]> {
     return sortedResult;
   }
 
+
+
+
+
+public computeOverlapByFileWithTolerance(
+  features: FeatureRec[]
+): Record<string,string[]> {
+  // 0️⃣ tolerance constant
+  const COORD_TOLERANCE = 0.0001;
+
+  // helper: “first” coordinate of any GeoJSON geometry
+  function getStartCoord(geom: any): [number,number] {
+    switch (geom.type) {
+      case 'Point':
+        return geom.coordinates;
+      case 'LineString':
+      case 'MultiPoint':
+        return geom.coordinates[0];
+      case 'Polygon':
+      case 'MultiLineString':
+        // Polygon coords = [ ring1, ring2… ], ring1 = [ [x,y], … ]
+        return geom.coordinates[0][0];
+      case 'MultiPolygon':
+        // coords = [ [ ring1, … ], … ]
+        return geom.coordinates[0][0][0];
+      default:
+        throw new Error(`Unsupported geometry type ${geom.type}`);
+    }
+  }
+
+  // helper: within tolerance?
+  function isNear(
+    [x1,y1]: [number,number],
+    [x2,y2]: [number,number]
+  ): boolean {
+    return Math.abs(x1 - x2) <= COORD_TOLERANCE
+        && Math.abs(y1 - y2) <= COORD_TOLERANCE;
+  }
+
+  // 1️⃣ group features by filename
+  const groups = new Map<string, FeatureRec[]>();
+  for (const f of features) {
+    let bucket = groups.get(f.name);
+    if (!bucket) {
+      bucket = [];
+      groups.set(f.name, bucket);
+    }
+    bucket.push(f);
+  }
+
+  const files = Array.from(groups.keys());
+
+  // 2️⃣ record each file’s “starting feature” id & its start‐coord
+  const fileStartId   = new Map<string,string>();
+  const fileStartCoord = new Map<string,[number,number]>();
+  for (const name of files) {
+    const recs = groups.get(name)!;
+    const start = recs[0];
+    fileStartId.set(name, start.id);
+    fileStartCoord.set(name, getStartCoord(start.geom));
+  }
+
+  // 3️⃣ init result
+  const result: Record<string,string[]> = {};
+  files.forEach(name => result[name] = []);
+
+  // 4️⃣ precompute per‐file envelope
+  interface Box { minX:number; minY:number; maxX:number; maxY:number; }
+  const fileBBoxes = new Map<string, Box>();
+  for (const name of files) {
+    let minX = Infinity, minY = Infinity,
+        maxX = -Infinity, maxY = -Infinity;
+    for (const r of groups.get(name)!) {
+      const [x1,y1,x2,y2] = r.bbox;
+      minX = Math.min(minX, x1);
+      minY = Math.min(minY, y1);
+      maxX = Math.max(maxX, x2);
+      maxY = Math.max(maxY, y2);
+    }
+    fileBBoxes.set(name, { minX, minY, maxX, maxY });
+  }
+
+  // 5️⃣ test each unordered file‐pair
+  for (let i = 0; i < files.length; i++) {
+    for (let j = i + 1; j < files.length; j++) {
+      const A = files[i], B = files[j];
+      const ba = fileBBoxes.get(A)!, bb = fileBBoxes.get(B)!;
+
+      // 5a) cheap envelope‐reject
+      if (
+        bb.minX > ba.maxX || bb.maxX < ba.minX ||
+        bb.minY > ba.maxY || bb.maxY < ba.minY
+      ) continue;
+
+      // 5b) drill into features
+      let overlapFound = false;
+      for (const ra of groups.get(A)!) {
+        for (const rb of groups.get(B)!) {
+          // 5b-i) fast bbox‐reject
+          const [a1,a2,a3,a4] = ra.bbox;
+          const [b1,b2,b3,b4] = rb.bbox;
+          if (b1 > a3 || b3 < a1 || b2 > a4 || b4 < a2) {
+            continue;
+          }
+
+          // 5b-ii) precise intersect
+          const hit = booleanIntersects(
+            { type:'Feature', properties:{}, geometry: ra.geom },
+            { type:'Feature', properties:{}, geometry: rb.geom }
+          );
+          if (!hit) continue;
+
+          // 5b-iii) check if both are “starting features” within tolerance
+          const isStartA = ra.id === fileStartId.get(A);
+          const isStartB = rb.id === fileStartId.get(B);
+          if (isStartA && isStartB) {
+            const coordA = fileStartCoord.get(A)!;
+            const coordB = fileStartCoord.get(B)!;
+            if (isNear(coordA, coordB)) {
+              // just the starting‐point overlap—skip it
+              continue;
+            }
+          }
+
+          // 5b-iv) real overlap
+          result[A].push(B);
+          result[B].push(A);
+          overlapFound = true;
+          break;
+        }
+        if (overlapFound) break;
+      }
+    }
+  }
+
+  // 6️⃣ dedupe & sort lists (optional)
+  for (const name of files) {
+    result[name] = Array.from(new Set(result[name])).sort();
+  }
+
+  return result;
+}
+
+
   public checkOverlap() {
     return new Promise(resolve => {
       const w = new Worker(
