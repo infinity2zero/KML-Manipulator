@@ -98,7 +98,7 @@ export function computeOverlapByFileHybrid(
           const fB:any = { type: 'Feature', properties: {}, geometry: rb.geom };
 
           if (!booleanIntersects(fA, fB)) continue;
-          if (booleanTouches(fA, fB)) continue;
+          if (safeTouches(fA, fB)) continue;
 
           const shared = intersect(fA, fB);
           if (!shared) continue;
@@ -132,4 +132,12 @@ export function computeOverlapByFileHybrid(
   }
 
   return result;
+}
+function safeTouches(a: any, b: any): boolean {
+  const unsupported = ['Point', 'MultiPoint'];
+  if (
+    unsupported.includes(a.geometry.type) ||
+    unsupported.includes(b.geometry.type)
+  ) return false;
+  return booleanTouches(a, b);
 }
